@@ -3,16 +3,8 @@ rm(list=ls())
 library(vegan)
 library(dplyr)
 
-setwd("C:/Users/ifluckessig/OneDrive - University of Florida/CLASSES/Fall 2022/Multivariate statistics/Lab11")
-
-spe <- read.csv("DoubsSpe.csv", row.names=1)
-head(spe)
-env <- read.csv("DoubsEnv.csv", row.names=1)
-head(env)
-
 ####load data from species distribution#####
-setwd("C:/Users/ifluckessig/OneDrive - University of Florida/CLASSES/Fall 2022/Multivariate statistics/final project")
-spe_pre <- read.csv("data from neon - beetles/PA_beetles.csv", row.names=1)
+spe_pre <- read.csv("data/PA_beetles.csv", row.names=1)
 spe_pre[1:5,1:5]
 
 spe<-spe_pre[,-1]
@@ -23,7 +15,7 @@ rowSums(spe) #all sites had spp
 #no NA
 
 ####load data environment#####
-env_pre<-read.csv("NEON_Field_Site_Metadata_20220412.csv", h=T) #from neon website
+env_pre<-read.csv("data/NEON_Field_Site_Metadata_20220412.csv", h=T) #from neon website
 head(env_pre)
 
 #filter for sites in the distribution data
@@ -59,19 +51,82 @@ long<-scale(long)
 elev<-scale(elev)
 preci<-scale(preci)
 temp<-scale(temp)
-?scale
+env<-as.data.frame(cbind(lat,long,elev,preci,temp))
+colnames(env)<- c("lat", "long", "elev", "preci", "temp")
+head(env)
 
-#####db-rda didnt work#####
+####db-rda####
 #Use the "capscale" function in Vegan to run db-rda.Note that the "distance" argument turns the site by species matrix into a distance matrix. You can use any distance measure in vegan (i.e., vegdist function)
 
-db.rda <- capscale(spe ~ elev+ long  + preci + temp , data=env, distance = "jaccard", add=TRUE)
+# Two ways doing db.rda --> 1) giving the raw PA matrix and specifying dist to be performed (jaccard) and function to use (vegdist)//2) perform dist function on PA before dbrda and leave other arguments empty
 
-summary(db.rda)
+#####first way#####
+db.rda_1 <- capscale(spe ~ elev+ long  + preci + temp , data=env, distance = "jaccard", dfun="vegdist", add=TRUE)
+
+summary(db.rda_1)
 
 #R2 and adjusted R2
-R2 <- RsquareAdj(db.rda)$r.squared #21
-R2adj <- RsquareAdj(db.rda)$adj.r.squared #13
+R2 <- RsquareAdj(db.rda_1)$r.squared #21
+R2adj <- RsquareAdj(db.rda_1)$adj.r.squared #13
 
+#####second way#####
+spe_dist<-vegdist(spe, "jaccard")
+db.rda_2 <- capscale(spe_dist ~ elev+ long  + preci + temp , data=env,add=TRUE)
+
+summary(db.rda_2)
+
+#R2 and adjusted R2
+R2 <- RsquareAdj(db.rda_2)$r.squared #21
+R2adj <- RsquareAdj(db.rda_2)$adj.r.squared #13
+
+#same results!!
+#choose one
+db.rda<-db.rda_1
+
+
+#####check old way doing db.rda (Legendre and Gallagher 2001)#####
+spe_dist<-vegdist(spe, "jaccard")#make distance of raw data PA
+?cmdscale
+spe_dist_pcoa<-cmdscale(spe_dist,k=5, eig=TRUE) #perform pcoa
+env #predictors X
+
+###take a look in the pcoa###
+cmd<-spe_dist_pcoa
+eigenvalues<-cmd$eig[1:5]
+propVar<-eigenvalues/sum(eigenvalues)
+cumVar<-cumsum(propVar)
+PCoA_Table<-cbind(eigenvalues,propVar,cumVar)
+PCoA_Table
+
+plot(eigenvalues)
+lines(lowess(eigenvalues)) #I would use 3 axis to have 70% of the variation...
+
+#plot pcoa
+x<-cmd$points[,1]
+y<-cmd$points[,2]
+plot(x,y,xlab= "Coordinate 1", ylab="Coordinate 2", xlim=range(x)*1.2,ylim=range(y)*1.2, type="n")
+text(x,y,labels=rownames(cmd$points), cex=.9) #sites
+
+#other way
+ordiplot(scores(cmd)[,c(1,2)], type="t",cex=1, main="PCoA beetles community dissimilarity")
+abline(h=0,lty=3)
+abline(v=0,lty=3)
+
+#plot spp
+species<-wascores(cmd$points[,1:2],spe)
+text(species,rownames(species),cex=.7, col="red") #hahah not feasible
+
+#perform rda with the pcoa
+rda_resu<-rda(spe_dist_pcoa$eig ~  elev+ long  + preci + temp , data=env)
+summary(rda_resu)
+
+R2 <- RsquareAdj(rda_resu)$r.squared #20
+R2adj <- RsquareAdj(rda_resu)$adj.r.squared #12
+#very similar from using db.rda function
+
+####plot db.RDA####
+#I'm using the first way of ferforming dbRDA because is more recent and clear aboud distances using
+db.rda<-db.rda_1
 
 #Plot using the F-scores:
 #par(mfrow=c(1,2))
@@ -86,8 +141,8 @@ plot(db.rda, scaling=1, display=c("sp", "lc", "cn"),
      main="Triplot db-rda  Z scores")
 arrows(0, 0, spe.sc[, 1], spe.sc[, 2], length=0, lty=1, col="red")
 
-#spp in red, 
-length(env_pre$field_site_id)
+#understanding
+?capscale
 
 #####anova#####
 #Conduct a permutation test using anova function in vegan to test the significance of the model, individual axes, and varaibles:
